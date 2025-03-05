@@ -45,8 +45,8 @@ void imshow(const arma::mat &matrix, const std::string &winname = "Image", int w
         }
     }
 
-    cv::normalize(cvMatrix, cvMatrix, 0, 255, cv::NORM_MINMAX);
-    cvMatrix.convertTo(cvMatrix, CV_8U);
+    cv::normalize(cvMatrix, cvMatrix, 0, 65535, cv::NORM_MINMAX);
+    cvMatrix.convertTo(cvMatrix, CV_16U);
 
     // Display Image
     cv::namedWindow("Armadillo Matrix", cv::WINDOW_NORMAL);
@@ -54,7 +54,7 @@ void imshow(const arma::mat &matrix, const std::string &winname = "Image", int w
     cv::waitKey(waittime);
 }
 
-void imagesc(const arma::mat &matrix, const std::string &winname = "Colormap Image", int colormap = cv::COLORMAP_JET, int waittime = 0)
+void imagesc(const arma::mat &matrix, const std::string &winname = "Colormap Image", int waittime = 0)
 {
     cv::Mat cvMatrix(matrix.n_rows, matrix.n_cols, CV_64F);
 
@@ -72,12 +72,43 @@ void imagesc(const arma::mat &matrix, const std::string &winname = "Colormap Ima
 
     // Apply colormap
     cv::Mat coloredMatrix;
+    int colormap = cv::COLORMAP_JET;
     cv::applyColorMap(cvMatrix, coloredMatrix, colormap);
 
     // Display Image
     cv::namedWindow("Armadillo Matrix", cv::WINDOW_NORMAL);
     cv::imshow("Armadillo Matrix", coloredMatrix);
     cv::waitKey(waittime);
+}
+
+void saveArmaCubeToMultipageTIFF(const arma::cube &cube, const std::string &filename)
+{
+    std::vector<cv::Mat> images_cv;
+    
+    // Overall normalization
+    float min_value = cube.min();
+    float max_value = cube.max();
+    arma::cube normalized_cube = (cube - min_value) / (max_value - min_value) * 65535.0;
+
+    // Convert arma::cube to std::vector<cv::Mat>
+    for (size_t k = 0; k < cube.n_slices; k++)
+    {
+        arma::mat matrix_arma = normalized_cube.slice(k);
+        cv::Mat matrix_cv(cube.n_rows, cube.n_cols, CV_16U);
+        // Armadillo to OpenCV
+        for (size_t i = 0; i < matrix_arma.n_rows; i++)
+        {
+            for (size_t j = 0; j < matrix_arma.n_cols; j++)
+            {
+                matrix_cv.at<uint16_t>(i, j) = matrix_arma(i, j);
+            }
+        }
+        // matrix_cv.convertTo(matrix_cv, CV_16U);
+        images_cv.push_back(matrix_cv);
+    }
+
+    // Save to multipage TIFF file
+    cv::imwrite(filename, images_cv);
 }
 
 class Recon
@@ -172,15 +203,16 @@ public:
                 ascan.shed_rows(0, 7);
                 ascan %= m_window;
                 arma::cx_vec ascan_fft = m_fft.computeFFT(ascan);
+                ascan_fft.shed_rows(ascan_fft.n_rows - 1024, ascan_fft.n_rows - 1);
                 arma::vec ascan_abs = arma::abs(ascan_fft);
                 ascan_abs = 70.0 * arma::log10(ascan_abs + 1);
                 ascan_abs = arma::pow(ascan_abs, 3);
-                ascan_abs.shed_rows(ascan_abs.n_rows - 1024, ascan_abs.n_rows - 1);
                 m_data_gray->slice(k).col(j) = ascan_abs;
             }
             arma::mat matrix = m_data_gray->slice(k);
-            imagesc(matrix, "Armadillo Matrix", 2, 1);
+            imagesc(matrix, "Armadillo Matrix", 1);
         }
+        saveArmaCubeToMultipageTIFF(*m_data_gray, "a.tif");
     }
 };
 
