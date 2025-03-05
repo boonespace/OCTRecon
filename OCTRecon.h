@@ -169,27 +169,9 @@ public:
 
         size_t count = 0;
         char buffer[8];
-        double *dataPtr = m_data_bin->memptr();
-
-        while (file.read(buffer, m_dtypeSize))
-        {
-            int16_t value; // TODO: Dynamic settings by dtype
-            std::memcpy(&value, buffer, m_dtypeSize);
-            dataPtr[count] = value;
-            count++;
-        }
-
-        // Check if the data was read completely
-
-        if (count < m_total_elements)
-        {
-            std::cerr << "Warning: Insufficient data read, the file may be corrupted or incomplete!" << std::endl;
-        }
-        else
-        {
-            std::cout << "Data reading completed successfully. Total " << count << " data points read." << std::endl;
-        }
-
+        arma::Cube<int16_t> data(m_size_x, m_size_y, m_size_z);
+        file.read(reinterpret_cast<char*>(data.memptr()), m_expectedSize);
+        *m_data_bin = arma::conv_to<arma::cube>::from(data);
         file.close();
     }
 
