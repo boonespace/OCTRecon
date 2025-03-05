@@ -49,8 +49,8 @@ void imshow(const arma::mat &matrix, const std::string &winname = "Image", int w
     cvMatrix.convertTo(cvMatrix, CV_16U);
 
     // Display Image
-    cv::namedWindow("Armadillo Matrix", cv::WINDOW_NORMAL);
-    cv::imshow("Armadillo Matrix", cvMatrix);
+    cv::namedWindow(winname, cv::WINDOW_NORMAL);
+    cv::imshow(winname, cvMatrix);
     cv::waitKey(waittime);
 }
 
@@ -76,15 +76,15 @@ void imagesc(const arma::mat &matrix, const std::string &winname = "Colormap Ima
     cv::applyColorMap(cvMatrix, coloredMatrix, colormap);
 
     // Display Image
-    cv::namedWindow("Armadillo Matrix", cv::WINDOW_NORMAL);
-    cv::imshow("Armadillo Matrix", coloredMatrix);
+    cv::namedWindow(winname, cv::WINDOW_NORMAL);
+    cv::imshow(winname, coloredMatrix);
     cv::waitKey(waittime);
 }
 
 void saveArmaCubeToMultipageTIFF(const arma::cube &cube, const std::string &filename)
 {
     std::vector<cv::Mat> images_cv;
-    
+
     // Overall normalization
     float min_value = cube.min();
     float max_value = cube.max();
@@ -115,7 +115,8 @@ class Recon
 {
 private:
     std::shared_ptr<arma::cube> m_data_bin = std::make_shared<arma::cube>();
-    std::shared_ptr<arma::cube> m_data_gray = std::make_shared<arma::cube>();
+    std::shared_ptr<arma::cube> m_data_magnitude = std::make_shared<arma::cube>();
+    std::shared_ptr<arma::cube> m_data_phase = std::make_shared<arma::cube>();
     size_t m_size_x;
     size_t m_size_y;
     size_t m_size_z;
@@ -136,7 +137,8 @@ public:
         m_expectedSize = m_total_elements * m_dtypeSize + headerSize;
         m_data_bin->resize(size_x, size_y, size_z);
         int N = size_x - 8;
-        m_data_gray->resize(N / 2, size_y, size_z);
+        m_data_magnitude->resize(N / 2, size_y, size_z);
+        m_data_phase->resize(N / 2, size_y, size_z);
         m_fft.set(N);
 
         m_window.resize(N);
@@ -189,12 +191,17 @@ public:
                 arma::vec ascan_abs = arma::abs(ascan_fft);
                 ascan_abs = 70.0 * arma::log10(ascan_abs + 1);
                 ascan_abs = arma::pow(ascan_abs, 3);
-                m_data_gray->slice(k).col(j) = ascan_abs;
+                m_data_magnitude->slice(k).col(j) = ascan_abs;
+                arma::vec ascan_arg = arma::arg(ascan_fft);
+                m_data_phase->slice(k).col(j) = ascan_arg;
             }
-            arma::mat matrix = m_data_gray->slice(k);
-            imagesc(matrix, "Armadillo Matrix", 1);
+            arma::mat matrix = m_data_magnitude->slice(k);
+            imagesc(matrix, "magnitude", 1);
+            matrix = m_data_phase->slice(k);
+            imagesc(matrix, "phase", 1);
         }
-        saveArmaCubeToMultipageTIFF(*m_data_gray, "a.tif");
+        saveArmaCubeToMultipageTIFF(*m_data_magnitude, "a.tif");
+        saveArmaCubeToMultipageTIFF(*m_data_phase, "b.tif");
     }
 };
 
