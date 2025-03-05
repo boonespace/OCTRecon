@@ -115,8 +115,11 @@ class Recon
 {
 private:
     std::shared_ptr<arma::cube> m_data_bin = std::make_shared<arma::cube>();
-    std::shared_ptr<arma::cube> m_data_magnitude = std::make_shared<arma::cube>();
+    std::shared_ptr<arma::cube> m_data_amplitude = std::make_shared<arma::cube>();
     std::shared_ptr<arma::cube> m_data_phase = std::make_shared<arma::cube>();
+    std::string imagename;  // Path to the input image file.
+    std::string outputname_amplitude; // Path to the output image file.
+    std::string outputname_phase; // Path to the output image file.
     size_t m_size_x;
     size_t m_size_y;
     size_t m_size_z;
@@ -137,7 +140,7 @@ public:
         m_expectedSize = m_total_elements * m_dtypeSize + headerSize;
         m_data_bin->resize(size_x, size_y, size_z);
         int N = size_x - 8;
-        m_data_magnitude->resize(N / 2, size_y, size_z);
+        m_data_amplitude->resize(N / 2, size_y, size_z);
         m_data_phase->resize(N / 2, size_y, size_z);
         m_fft.set(N);
 
@@ -150,9 +153,12 @@ public:
 
     void readData(std::string filename)
     {
-        std::filesystem::path filepath = std::filesystem::path(filename);
-        // 读取数据
-        std::ifstream file(filepath, std::ios::binary);
+        imagename = filename;
+        outputname_amplitude = std::filesystem::path(imagename).replace_extension("amplitude.tif").string();
+        outputname_phase = std::filesystem::path(imagename).replace_extension("phase.tif").string();
+
+        // read bin file
+        std::ifstream file(imagename, std::ios::binary);
 
         file.seekg(0, std::ios::end);
         size_t fileSize = file.tellg();
@@ -183,25 +189,32 @@ public:
         {
             for (int j = 0; j < m_data_bin->n_cols; j++)
             {
+                // Extract A-Scan data and remove the first 8 bits of identifier
                 arma::vec ascan = m_data_bin->slice(k).col(j);
                 ascan.shed_rows(0, 7);
+                // Add window to reduce spectrum leakage
                 ascan %= m_window;
+                // Fourier Transform
                 arma::cx_vec ascan_fft = m_fft.computeFFT(ascan);
+                // Retain half and remove the inverted image
                 ascan_fft.shed_rows(ascan_fft.n_rows - 1024, ascan_fft.n_rows - 1);
+                // Extract amplitude and phase
                 arma::vec ascan_abs = arma::abs(ascan_fft);
+                arma::vec ascan_arg = arma::arg(ascan_fft);
+                // Signal Enhancement
                 ascan_abs = 70.0 * arma::log10(ascan_abs + 1);
                 ascan_abs = arma::pow(ascan_abs, 3);
-                m_data_magnitude->slice(k).col(j) = ascan_abs;
-                arma::vec ascan_arg = arma::arg(ascan_fft);
+                // Save
+                m_data_amplitude->slice(k).col(j) = ascan_abs;
                 m_data_phase->slice(k).col(j) = ascan_arg;
             }
-            arma::mat matrix = m_data_magnitude->slice(k);
+            arma::mat matrix = m_data_amplitude->slice(k);
             imagesc(matrix, "magnitude", 1);
             matrix = m_data_phase->slice(k);
             imagesc(matrix, "phase", 1);
         }
-        saveArmaCubeToMultipageTIFF(*m_data_magnitude, "a.tif");
-        saveArmaCubeToMultipageTIFF(*m_data_phase, "b.tif");
+        saveArmaCubeToMultipageTIFF(*m_data_amplitude, outputname_amplitude);
+        saveArmaCubeToMultipageTIFF(*m_data_phase, outputname_phase);
     }
 };
 
