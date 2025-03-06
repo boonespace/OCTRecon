@@ -39,6 +39,7 @@ target_link_libraries(octrecon ${LIBRARIES})
 if(WIN32)
     set(DLL_FILES
         ${CMAKE_SOURCE_DIR}/third_party/fftw3/dll/libfftw3-3.dll
+        C:/Develop/opencv/build/x64/vc16/bin/opencv_world4100.dll
     )
     foreach(DLL ${DLL_FILES})
         add_custom_command(

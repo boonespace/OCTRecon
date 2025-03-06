@@ -8,6 +8,7 @@
 #include "FFT.h"
 #include <opencv2/opencv.hpp>
 #include <numbers>
+#include "Logger.h"
 
 enum DataType
 {
@@ -32,94 +33,15 @@ size_t getDataTypeSize(DataType type)
     return dataTypeSizes[type];
 }
 
-void imshow(const arma::mat &matrix, const std::string &winname = "Image", int waittime = 0)
-{
-    cv::Mat cvMatrix(matrix.n_rows, matrix.n_cols, CV_64F);
-
-    // Armadillo to OpenCV
-    for (size_t i = 0; i < matrix.n_rows; ++i)
-    {
-        for (size_t j = 0; j < matrix.n_cols; ++j)
-        {
-            cvMatrix.at<double>(i, j) = matrix(i, j);
-        }
-    }
-
-    cv::normalize(cvMatrix, cvMatrix, 0, 65535, cv::NORM_MINMAX);
-    cvMatrix.convertTo(cvMatrix, CV_16U);
-
-    // Display Image
-    cv::namedWindow(winname, cv::WINDOW_NORMAL);
-    cv::imshow(winname, cvMatrix);
-    cv::waitKey(waittime);
-}
-
-void imagesc(const arma::mat &matrix, const std::string &winname = "Colormap Image", int waittime = 0)
-{
-    cv::Mat cvMatrix(matrix.n_rows, matrix.n_cols, CV_64F);
-
-    // Armadillo to OpenCV
-    for (size_t i = 0; i < matrix.n_rows; ++i)
-    {
-        for (size_t j = 0; j < matrix.n_cols; ++j)
-        {
-            cvMatrix.at<double>(i, j) = matrix(i, j);
-        }
-    }
-
-    cv::normalize(cvMatrix, cvMatrix, 0, 255, cv::NORM_MINMAX);
-    cvMatrix.convertTo(cvMatrix, CV_8U);
-
-    // Apply colormap
-    cv::Mat coloredMatrix;
-    int colormap = cv::COLORMAP_JET;
-    cv::applyColorMap(cvMatrix, coloredMatrix, colormap);
-
-    // Display Image
-    cv::namedWindow(winname, cv::WINDOW_NORMAL);
-    cv::imshow(winname, coloredMatrix);
-    cv::waitKey(waittime);
-}
-
-void saveArmaCubeToMultipageTIFF(const arma::cube &cube, const std::string &filename)
-{
-    std::vector<cv::Mat> images_cv;
-
-    // Overall normalization
-    float min_value = cube.min();
-    float max_value = cube.max();
-    arma::cube normalized_cube = (cube - min_value) / (max_value - min_value) * 65535.0;
-
-    // Convert arma::cube to std::vector<cv::Mat>
-    for (size_t k = 0; k < cube.n_slices; k++)
-    {
-        arma::mat matrix_arma = normalized_cube.slice(k);
-        cv::Mat matrix_cv(cube.n_rows, cube.n_cols, CV_16U);
-        // Armadillo to OpenCV
-        for (size_t i = 0; i < matrix_arma.n_rows; i++)
-        {
-            for (size_t j = 0; j < matrix_arma.n_cols; j++)
-            {
-                matrix_cv.at<uint16_t>(i, j) = matrix_arma(i, j);
-            }
-        }
-        // matrix_cv.convertTo(matrix_cv, CV_16U);
-        images_cv.push_back(matrix_cv);
-    }
-
-    // Save to multipage TIFF file
-    cv::imwrite(filename, images_cv);
-}
-
 class Recon
 {
 private:
     std::shared_ptr<arma::cube> m_data_bin = std::make_shared<arma::cube>();
     std::shared_ptr<arma::cube> m_data_amplitude = std::make_shared<arma::cube>();
     std::shared_ptr<arma::cube> m_data_phase = std::make_shared<arma::cube>();
-    std::string imagename;  // Path to the input image file.
+    std::string imagename;            // Path to the input image file.
     std::string outputname_amplitude; // Path to the output image file.
-    std::string outputname_phase; // Path to the output image file.
+    std::string outputname_phase;     // Path to the output image file.
     size_t m_size_x;
     size_t m_size_y;
     size_t m_size_z;
@@ -131,91 +53,16 @@ private:
     FFT m_fft;
     arma::vec m_window;
 
+    void saveArmaCubeToMultipageTIFF(const arma::cube &cube, const std::string &filename);
+    void imshow(const arma::mat &matrix, const std::string &winname = "Image", int waittime = 0);
+    void imagesc(const arma::mat &matrix, const std::string &winname = "Colormap Image", int waittime = 0);
+
 public:
-    Recon(size_t size_x, size_t size_y, size_t size_z, DataType dtype, int headerSize = 0)
-        : m_size_x(size_x), m_size_y(size_y), m_size_z(size_z), m_dtype(dtype), m_headerSize(headerSize)
-    {
-        m_total_elements = size_x * size_y * size_z;
-        m_dtypeSize = getDataTypeSize(dtype);
-        m_expectedSize = m_total_elements * m_dtypeSize + headerSize;
-        m_data_bin->resize(size_x, size_y, size_z);
-        int N = size_x - 8;
-        m_data_amplitude->resize(N / 2, size_y, size_z);
-        m_data_phase->resize(N / 2, size_y, size_z);
-        m_fft.set(N);
+    Recon(size_t size_x, size_t size_y, size_t size_z, DataType dtype, int headerSize = 0);
 
-        m_window.resize(N);
-        for (int n = 0; n < N; ++n)
-        {
-            m_window[n] = 0.5 * (1 - std::cos(2 * std::numbers::pi * n / (N - 1)));
-        }
-    }
+    bool readData(std::string filename);
 
-    void readData(std::string filename)
-    {
-        imagename = filename;
-        outputname_amplitude = std::filesystem::path(imagename).replace_extension("amplitude.tif").string();
-        outputname_phase = std::filesystem::path(imagename).replace_extension("phase.tif").string();
-
-        // read bin file
-        std::ifstream file(imagename, std::ios::binary);
-
-        file.seekg(0, std::ios::end);
-        size_t fileSize = file.tellg();
-
-        if (fileSize != m_expectedSize)
-        {
-            file.close();
-            std::cerr << "File size (" << fileSize << " bytes) does not match expected (" << m_expectedSize << " bytes)!" << std::endl;
-        }
-
-        file.seekg(m_headerSize, std::ios::beg);
-        if (!file)
-        {
-            std::cerr << "Error: Failed to seek to the data position!" << std::endl;
-        }
-
-        size_t count = 0;
-        char buffer[8];
-        arma::Cube<int16_t> data(m_size_x, m_size_y, m_size_z);
-        file.read(reinterpret_cast<char*>(data.memptr()), m_expectedSize);
-        *m_data_bin = arma::conv_to<arma::cube>::from(data);
-        file.close();
-    }
-
-    void reconstruction()
-    {
-        for (int k = 0; k < m_data_bin->n_slices; k++)
-        {
-            for (int j = 0; j < m_data_bin->n_cols; j++)
-            {
-                // Extract A-Scan data and remove the first 8 bits of identifier
-                arma::vec ascan = m_data_bin->slice(k).col(j);
-                ascan.shed_rows(0, 7);
-                // Add window to reduce spectrum leakage
-                ascan %= m_window;
-                // Fourier Transform
-                arma::cx_vec ascan_fft = m_fft.computeFFT(ascan);
-                // Retain half and remove the inverted image
-                ascan_fft.shed_rows(ascan_fft.n_rows - 1024, ascan_fft.n_rows - 1);
-                // Extract amplitude and phase
-                arma::vec ascan_abs = arma::abs(ascan_fft);
-                arma::vec ascan_arg = arma::arg(ascan_fft);
-                // Signal Enhancement
-                ascan_abs = 70.0 * arma::log10(ascan_abs + 1);
-                ascan_abs = arma::pow(ascan_abs, 3);
-                // Save
-                m_data_amplitude->slice(k).col(j) = ascan_abs;
-                m_data_phase->slice(k).col(j) = ascan_arg;
-            }
-            arma::mat matrix = m_data_amplitude->slice(k);
-            imagesc(matrix, "magnitude", 1);
-            matrix = m_data_phase->slice(k);
-            imagesc(matrix, "phase", 1);
-        }
-        saveArmaCubeToMultipageTIFF(*m_data_amplitude, outputname_amplitude);
-        saveArmaCubeToMultipageTIFF(*m_data_phase, outputname_phase);
-    }
+    bool reconstruction();
 };
 
 #endif // OCTRECON_H
