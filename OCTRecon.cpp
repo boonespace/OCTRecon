@@ -102,8 +102,10 @@ Recon::Recon(size_t size_x, size_t size_y, size_t size_z, DataType dtype, int he
 bool Recon::readData(std::string filename)
 {
     imagename = filename;
-    outputname_amplitude = std::filesystem::path(imagename).replace_extension("amplitude.tif").string();
-    outputname_phase = std::filesystem::path(imagename).replace_extension("phase.tif").string();
+
+    std::filesystem::path image_path(imagename);
+    outputname_amplitude = image_path.replace_filename(image_path.stem().string() + "_amplitude.tif").string();
+    outputname_phase = image_path.replace_filename(image_path.stem().string() + "_phase.tif").string();
 
     // read bin file
     std::ifstream file(imagename, std::ios::binary);
