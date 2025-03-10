@@ -1,4 +1,5 @@
 #include "OCTRecon.h"
+#include "Encoding.h"
 #include "toml++/toml.hpp"
 
 void Recon::imshow(const arma::mat &matrix, const std::string &winname, int waittime)
@@ -77,7 +78,8 @@ void Recon::saveArmaCubeToMultipageTIFF(const arma::cube &cube, const std::strin
     }
 
     // Save to multipage TIFF file
-    cv::imwrite(filename, images_cv);
+    std::string name = Utf8ToGbk(filename);
+    cv::imwrite(name, images_cv);
 }
 
 Recon::Recon(size_t size_x, size_t size_y, size_t size_z, DataType dtype, int headerSize)
@@ -197,6 +199,8 @@ bool Recon::reconstruction()
 
 int main()
 {
+    std::setlocale(LC_ALL, ".UTF-8");
+
     // Logger
     Logger logger;
     logger.log(Logger::LogLevel::INFO, "System", "Startup", "Program started");
@@ -212,9 +216,10 @@ int main()
     logger.log(Logger::LogLevel::INFO, "Config", "Load", "Configuration loaded successfully");
 
     // Adjust according to the actual project directory structure
+    logger.log(Logger::LogLevel::INFO, "Data", "Init", "Directory scan started: " + path);
     DataStorage ds;
     ds.getFromFolder(path, extension);
-    logger.log(Logger::LogLevel::INFO, "Data", "Load", "Directory scan complete: " + path);
+    logger.log(Logger::LogLevel::INFO, "Data", "Load", "Directory scan complete");
 
     // Perform image reconstruction
     logger.log(Logger::LogLevel::INFO, "Reconstruction", "Init", "Initializing reconstruction module");

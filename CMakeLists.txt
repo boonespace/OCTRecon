@@ -24,6 +24,7 @@ include_directories(${OpenCV_INCLUDE_DIRS})
 set(SOURCES
     include/DataStorage.cpp
     include/FFT.cpp
+    include/Encoding.cpp
 )
 
 if(WIN32)
