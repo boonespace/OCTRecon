@@ -1,27 +1,33 @@
 #include "Encoding.h"
+
+#ifdef WIN32
 #include <windows.h>
 
 // GBK To UTF-8
-std::string GbkToUtf8(const std::string& gbkStr) {
+std::string GbkToUtf8(const std::string &gbkStr)
+{
     // The number of wide characters required to convert GBK to UTF-16
     int wLen = MultiByteToWideChar(CP_ACP, 0, gbkStr.c_str(), -1, nullptr, 0);
-    if (wLen <= 0) return "";
+    if (wLen <= 0)
+        return "";
 
     std::wstring wstr(wLen, 0);
     MultiByteToWideChar(CP_ACP, 0, gbkStr.c_str(), -1, &wstr[0], wLen);
 
     // The number of bytes required to convert UTF-16 to UTF-8
     int utf8Len = WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), -1, nullptr, 0, nullptr, nullptr);
-    if (utf8Len <= 0) return "";
+    if (utf8Len <= 0)
+        return "";
 
-    std::string utf8Str(utf8Len - 1, 0);  // -1 removes the trailing '\0'
+    std::string utf8Str(utf8Len - 1, 0); // -1 removes the trailing '\0'
     WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), -1, &utf8Str[0], utf8Len, nullptr, nullptr);
 
     return utf8Str;
 }
 
 // UTF-8 To GBK
-std::string Utf8ToGbk(const std::string& utf8_str) {
+std::string Utf8ToGbk(const std::string &utf8_str)
+{
     // First convert UTF-8 to UTF-16 (wide characters)
     int wide_len = MultiByteToWideChar(CP_UTF8, 0, utf8_str.c_str(), -1, NULL, 0);
     std::wstring wide_str(wide_len, 0);
@@ -34,3 +40,18 @@ std::string Utf8ToGbk(const std::string& utf8_str) {
 
     return gbk_str;
 }
+
+#else // no WIN32
+
+// Do Nothing
+std::string GbkToUtf8(const std::string &gbkStr)
+{
+    return gbkStr;
+}
+
+std::string Utf8ToGbk(const std::string &utf8_str)
+{
+    return utf8_str;
+}
+
+#endif // WIN32
