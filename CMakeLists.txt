@@ -44,10 +44,16 @@ add_executable(octrecon OCTRecon.cpp ${SOURCES})
 
 target_link_libraries(octrecon ${LIBRARIES})
 
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    set(OpenCV_RUNTIME_DLL "C:/Develop/opencv/build/x64/vc16/bin/opencv_world4100d.dll")
+elseif(CMAKE_BUILD_TYPE STREQUAL "Release")
+    set(OpenCV_RUNTIME_DLL "C:/Develop/opencv/build/x64/vc16/bin/opencv_world4100.dll")
+endif()
+
 if(WIN32)
     set(DLL_FILES
         ${CMAKE_SOURCE_DIR}/third_party/fftw3/dll/libfftw3-3.dll
-        C:/Develop/opencv/build/x64/vc16/bin/opencv_world4100.dll
+        ${OpenCV_RUNTIME_DLL}
         C:/Develop/armadillo/armadillo/examples/lib_win64/libopenblas.dll
     )
     foreach(DLL ${DLL_FILES})

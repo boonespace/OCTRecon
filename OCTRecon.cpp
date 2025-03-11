@@ -87,8 +87,8 @@ void Recon::saveArmaCubeToMultipageTIFF(const arma::cube &cube, const std::strin
     cv::imwrite(name, images_cv);
 }
 
-Recon::Recon(size_t size_x, size_t size_y, size_t size_z, DataType dtype, int headerSize)
-    : m_size_x(size_x), m_size_y(size_y), m_size_z(size_z), m_dtype(dtype), m_headerSize(headerSize)
+Recon::Recon(size_t size_x, size_t size_y, size_t size_z, DataType dtype, int maxIteration, float rho, float lambda, int headerSize)
+    : m_size_x(size_x), m_size_y(size_y), m_size_z(size_z), m_dtype(dtype), m_rho(rho), m_lambda(lambda), m_maxIteration(maxIteration), m_headerSize(headerSize)
 {
     logger.log(Logger::LogLevel::INFO, "Recon", "Init", "Initializing reconstruction module");
     m_total_elements = size_x * size_y * size_z;
@@ -174,22 +174,24 @@ bool Recon::reconstruction()
                 // Extract amplitude and phase
                 arma::vec ascan_abs = arma::abs(ascan_fft);
                 arma::vec ascan_arg = arma::arg(ascan_fft);
-                //// ADMM Iteration
-                //arma::cx_vec r = ascan_fft; // init value
-                //arma::cx_vec u(r.n_elem, arma::fill::zeros);
-                //float rho = 0.01, lambda = 100;
-                //for (int iter = 0; iter < 10; iter++){
-                //    arma::cx_vec r_new = ascan_fft + rho*(r-u);
-                //    float lambda_new = lambda / rho;
-                //    arma::vec zeros(r.n_elem, arma::fill::zeros);
-                //    arma::vec s = arma::abs(r_new)-lambda_new;
-                //    r = arma::sign(r_new) % arma::max(arma::abs(r_new)-lambda_new, zeros);
-                //    u = u + r;
-                //    float error = arma::norm(r);
-                //    if (error<1e-4)
-                //        break;
-                //}
-                //ascan_abs = arma::abs(r);
+                // ADMM Iteration
+                if (m_maxIteration>0) {
+                    arma::cx_vec r = ascan_fft; // init value
+                    arma::cx_vec u(r.n_elem, arma::fill::zeros);
+                    float rho = m_rho, lambda = m_lambda;
+                    for (int iter = 0; iter < m_maxIteration; iter++) {
+                        arma::cx_vec r_new = ascan_fft + rho * (r - u);
+                        float lambda_new = lambda / rho;
+                        arma::vec zeros(r.n_elem, arma::fill::zeros);
+                        arma::vec s = arma::abs(r_new) - lambda_new;
+                        r = arma::sign(r_new) % arma::max(arma::abs(r_new) - lambda_new, zeros);
+                        u = u + r;
+                        float error = arma::norm(r);
+                        if (error < 1e-4)
+                            break;
+                    }
+                    ascan_abs = arma::abs(r);
+                }
                 // Retain half and remove the inverted image
                 ascan_abs.shed_rows(ascan_abs.n_rows - 1024, ascan_abs.n_rows - 1);
                 ascan_arg.shed_rows(ascan_arg.n_rows - 1024, ascan_arg.n_rows - 1);
@@ -225,7 +227,6 @@ int main()
 
     // Logger
     Logger logger;
-    logger.log(Logger::LogLevel::INFO, "System", "Startup", "Program started");
 
     // Configure
     std::string filename = "config.toml";
@@ -235,7 +236,9 @@ int main()
     int size_x = *config["size_x"].value<int>();
     int size_y = *config["size_y"].value<int>();
     int size_z = *config["size_z"].value<int>();
-    logger.log(Logger::LogLevel::INFO, "Config", "Load", "Configuration loaded successfully");
+    int maxIteration = *config["maxIteration"].value<bool>();
+    float rho = *config["rho"].value<float>();
+    float lambda = *config["lambda"].value<float>();
 
     // Adjust according to the actual project directory structure
     logger.log(Logger::LogLevel::INFO, "Data", "Init", "Directory scan started: " + path);
@@ -244,7 +247,7 @@ int main()
     logger.log(Logger::LogLevel::INFO, "Data", "Load", "Directory scan complete");
 
     // Perform image reconstruction
-    Recon recon(size_x, size_y, size_z, DataType::INT16);
+    Recon recon(size_x, size_y, size_z, DataType::INT16, maxIteration, rho, lambda);
 
     for (int i = 0; i < ds.length; i++)
     {

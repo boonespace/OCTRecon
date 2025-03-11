@@ -48,6 +48,9 @@ private:
     size_t m_total_elements;
     size_t m_expectedSize;
     DataType m_dtype;
+    int m_maxIteration;
+    float m_rho;
+    float m_lambda;
     size_t m_dtypeSize;
     int m_headerSize;
     FFT m_fft;
@@ -59,7 +62,7 @@ private:
 
 public:
     Logger logger;
-    Recon(size_t size_x, size_t size_y, size_t size_z, DataType dtype, int headerSize = 0);
+    Recon(size_t size_x, size_t size_y, size_t size_z, DataType dtype, int maxIteration = 0, float rho = 0.01, float lambda = 100, int headerSize = 0);
     bool readData(std::string filename);
     bool reconstruction();
 };
