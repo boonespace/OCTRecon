@@ -36,7 +36,7 @@ size_t getDataTypeSize(DataType type)
 class Recon
 {
 private:
-    std::shared_ptr<arma::cube> m_data_bin = std::make_shared<arma::cube>();
+    std::shared_ptr<arma::Cube<int16_t>> m_data_bin = std::make_shared<arma::Cube<int16_t>>();
     std::shared_ptr<arma::cube> m_data_amplitude = std::make_shared<arma::cube>();
     std::shared_ptr<arma::cube> m_data_phase = std::make_shared<arma::cube>();
     std::string imagename;            // Path to the input image file.
@@ -58,10 +58,9 @@ private:
     void imagesc(const arma::mat &matrix, const std::string &winname = "Colormap Image", int waittime = 0);
 
 public:
+    Logger logger;
     Recon(size_t size_x, size_t size_y, size_t size_z, DataType dtype, int headerSize = 0);
-
     bool readData(std::string filename);
-
     bool reconstruction();
 };
 

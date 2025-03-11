@@ -65,9 +65,9 @@ public:
             logMessage << std::endl;
         std::cout << logMessage.str();
         
-        // If the log level is ERROR, terminate the program immediately
-        if (level == LogLevel::ERROR)
-            std::exit(1); // Use exit code 1 to signify an error
+        // // If the log level is ERROR, terminate the program immediately
+        // if (level == LogLevel::ERROR)
+        //     std::exit(1); // Use exit code 1 to signify an error
     }
 
     // Method for converting a LogLevel enumeration value into its string representation.

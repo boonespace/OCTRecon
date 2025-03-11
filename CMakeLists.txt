@@ -21,6 +21,13 @@ endif()
 find_package(OpenCV REQUIRED)
 include_directories(${OpenCV_INCLUDE_DIRS})
 
+find_package(OpenMP REQUIRED)
+if(OpenMP_CXX_FOUND)
+    message(STATUS "OpenMP found!")
+    add_compile_options(${OpenMP_CXX_FLAGS})
+    add_link_options(${OpenMP_CXX_FLAGS})
+endif()
+
 set(SOURCES
     include/DataStorage.cpp
     include/FFT.cpp
