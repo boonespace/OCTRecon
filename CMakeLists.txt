@@ -41,6 +41,7 @@ if(WIN32)
     set(DLL_FILES
         ${CMAKE_SOURCE_DIR}/third_party/fftw3/dll/libfftw3-3.dll
         C:/Develop/opencv/build/x64/vc16/bin/opencv_world4100.dll
+        C:/Develop/armadillo/armadillo/examples/lib_win64/libopenblas.dll
     )
     foreach(DLL ${DLL_FILES})
         add_custom_command(
