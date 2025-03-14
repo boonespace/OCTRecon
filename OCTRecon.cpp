@@ -6,15 +6,8 @@
 void Recon::imshow(const arma::mat &matrix, const std::string &winname, int waittime)
 {
     cv::Mat cvMatrix(matrix.n_rows, matrix.n_cols, CV_64F);
-
-    // Armadillo to OpenCV
-    for (size_t i = 0; i < matrix.n_rows; ++i)
-    {
-        for (size_t j = 0; j < matrix.n_cols; ++j)
-        {
-            cvMatrix.at<double>(i, j) = matrix(i, j);
-        }
-    }
+    arma::mat matrix_t = matrix.t();
+    std::memcpy(cvMatrix.data, matrix_t.memptr(), matrix_t.n_elem * sizeof(double));
 
     cv::normalize(cvMatrix, cvMatrix, 0, 65535, cv::NORM_MINMAX);
     cvMatrix.convertTo(cvMatrix, CV_16U);
@@ -28,15 +21,8 @@ void Recon::imshow(const arma::mat &matrix, const std::string &winname, int wait
 void Recon::imagesc(const arma::mat &matrix, const std::string &winname, int waittime)
 {
     cv::Mat cvMatrix(matrix.n_rows, matrix.n_cols, CV_64F);
-
-    // Armadillo to OpenCV
-    for (size_t i = 0; i < matrix.n_rows; ++i)
-    {
-        for (size_t j = 0; j < matrix.n_cols; ++j)
-        {
-            cvMatrix.at<double>(i, j) = matrix(i, j);
-        }
-    }
+    arma::mat matrix_t = matrix.t();
+    std::memcpy(cvMatrix.data, matrix_t.memptr(), matrix_t.n_elem * sizeof(double));
 
     cv::normalize(cvMatrix, cvMatrix, 0, 255, cv::NORM_MINMAX);
     cvMatrix.convertTo(cvMatrix, CV_8U);
@@ -54,9 +40,6 @@ void Recon::imagesc(const arma::mat &matrix, const std::string &winname, int wai
 
 void Recon::saveArmaCubeToMultipageTIFF(const arma::cube &cube, const std::string &filename)
 {
-    int num_threads = omp_get_num_procs()*0.8; // Get the number of CPU cores
-    omp_set_num_threads(num_threads);      // Set to the number of cores
-
     std::vector<cv::Mat> images_cv;
 
     // Overall normalization
@@ -68,17 +51,10 @@ void Recon::saveArmaCubeToMultipageTIFF(const arma::cube &cube, const std::strin
     for (int k = 0; k < cube.n_slices; k++)
     {
         arma::mat matrix_arma = normalized_cube.slice(k);
-        cv::Mat matrix_cv(cube.n_rows, cube.n_cols, CV_16U);
-        // Armadillo to OpenCV
-// #pragma omp parallel for
-        for (int i = 0; i < matrix_arma.n_rows; i++)
-        {
-            for (int j = 0; j < matrix_arma.n_cols; j++)
-            {
-                matrix_cv.at<uint16_t>(i, j) = matrix_arma(i, j);
-            }
-        }
-        // matrix_cv.convertTo(matrix_cv, CV_16U);
+        cv::Mat matrix_cv(cube.n_rows, cube.n_cols, CV_64F);
+        arma::mat matrix_t = matrix_arma.t();
+        std::memcpy(matrix_cv.data, matrix_t.memptr(), matrix_t.n_elem * sizeof(double));
+        matrix_cv.convertTo(matrix_cv, CV_16U);
         images_cv.push_back(matrix_cv);
     }
 
@@ -87,32 +63,15 @@ void Recon::saveArmaCubeToMultipageTIFF(const arma::cube &cube, const std::strin
     cv::imwrite(name, images_cv);
 }
 
-Recon::Recon(size_t size_x, size_t size_y, size_t size_z, DataType dtype, int maxIteration, float rho, float lambda, int headerSize)
-    : m_size_x(size_x), m_size_y(size_y), m_size_z(size_z), m_dtype(dtype), m_rho(rho), m_lambda(lambda), m_maxIteration(maxIteration), m_headerSize(headerSize)
+Recon::Recon(int maxIteration, float rho, float lambda)
+    : m_rho(rho), m_lambda(lambda), m_maxIteration(maxIteration)
 {
-    logger.log(Logger::LogLevel::INFO, "Recon", "Init", "Initializing reconstruction module");
-    m_total_elements = size_x * size_y * size_z;
-    m_dtypeSize = getDataTypeSize(dtype);
-    m_expectedSize = m_total_elements * m_dtypeSize + headerSize;
-    m_data_bin->resize(size_x, size_y, size_z);
-    int N = size_x - 8;
-    m_data_amplitude->resize(N / 2, size_y, size_z);
-    m_data_phase->resize(N / 2, size_y, size_z);
-    m_fft.set(N);
-
-    m_window.resize(N);
-    for (int n = 0; n < N; ++n)
-    {
-        m_window[n] = 0.5 * (1 - std::cos(2 * std::numbers::pi * n / (N - 1)));
-    }
-    logger.log(Logger::LogLevel::INFO, "Recon", "Init", "Successfully Initializion");
 }
 
 bool Recon::readData(std::string filename)
 {
     imagename = filename;
-    logger.log(Logger::LogLevel::INFO, "Recon", "Read", "Processing file: " + std::filesystem::path(imagename).filename().string());
-    
+    logger.log(Logger::LogLevel::INFO, "Recon", "Reading", "Processing file: " + std::filesystem::path(imagename).filename().string());
 
     std::filesystem::path image_path(imagename);
     std::string image_path_noext = image_path.replace_filename(image_path.stem().string()).string();
@@ -120,52 +79,79 @@ bool Recon::readData(std::string filename)
     outputname_phase = image_path_noext + "_phase.tif";
 
     // read bin file
-    std::ifstream file(imagename, std::ios::binary);
-
-    file.seekg(0, std::ios::end);
-    size_t fileSize = file.tellg();
-
-    if (fileSize != m_expectedSize)
-    {
-        file.close();
-        std::ostringstream errorMsg;
-        errorMsg << "File size (" << fileSize << " bytes) does not match expected (" << m_expectedSize << " bytes)!" << std::endl;
-        logger.log(Logger::LogLevel::ERROR, "Recon", "Read", errorMsg.str());
-        return false;
+    FILE* file = fopen(filename.c_str(), "rb"); // Open the file in binary mode
+    if (!file) {
+        logger.log(Logger::LogLevel::ERROR, "Recon", "Reading", "Unable to open file");
+        return 1;
     }
 
-    file.seekg(m_headerSize, std::ios::beg);
-    if (!file)
-    {
-        file.close();
-        logger.log(Logger::LogLevel::ERROR, "Recon", "Read", "Failed to seek to the data position!");
-        return false;
+    // Obtain file size
+    fseek(file, 0, SEEK_END);
+    long fileSize = ftell(file);
+    rewind(file);
+
+    // Obtain the number of int16_t
+    size_t numElements = fileSize / sizeof(int16_t);
+
+    // Allocate memory
+    int16_t* data = (int16_t*)malloc(fileSize);
+    if (!data) {
+        logger.log(Logger::LogLevel::ERROR, "Recon", "Reading", "Memory allocation failed");
+        fclose(file);
+        return 1;
     }
 
-    size_t count = 0;
-    char buffer[8];
-    // arma::Cube<int16_t> data(m_size_x, m_size_y, m_size_z);
-    file.read(reinterpret_cast<char *>(m_data_bin->memptr()), m_expectedSize);
-    // *m_data_bin = arma::conv_to<arma::cube>::from(data);
-    file.close();
-    logger.log(Logger::LogLevel::INFO, "Recon", "Read", "Successfully Read");
+    // Read data
+    size_t elementsRead = fread(data, sizeof(int16_t), numElements, file);
+    fclose(file);
+
+    // Check if reading is successful
+    if (elementsRead != numElements) {
+        logger.log(Logger::LogLevel::ERROR, "Recon", "Reading", "Error reading data");
+        free(data);
+        return 1;
+    }
+
+    // Judge the data shape
+    m_num_bscan = (size_t) data[6];
+    m_num_cscan = elementsRead / m_num_bscan / (m_num_header + m_num_ascan);
+
+    // Copy data to m_data_bin so that it can automatically manage memory
+    m_data_bin.resize(m_num_header + m_num_ascan, m_num_bscan, m_num_cscan);
+    std::memcpy(m_data_bin.memptr(), data, fileSize);
+    free(data);
+
+    // Allocate size
+    size_t m_num_half_ascan = m_num_ascan / 2;
+    m_data_amplitude.resize(m_num_half_ascan, m_num_bscan, m_num_cscan);
+    m_data_phase.resize(m_num_half_ascan, m_num_bscan, m_num_cscan);
+    m_fft.set(m_num_ascan);
+
+    // Pre-generate window function (Hann window)
+    m_window.resize(m_num_ascan);
+    for (int n = 0; n < m_num_ascan; ++n)
+    {
+        m_window[n] = 0.5 * (1 - std::cos(2 * std::numbers::pi * n / (m_num_ascan - 1)));
+    }
+
+    logger.log(Logger::LogLevel::TRACE, "Recon", "Reading", "Successfully Read");
     return true;
 }
 
 bool Recon::reconstruction()
 {
-    logger.log(Logger::LogLevel::INFO, "Recon", "Process", "Reconstructing: " + std::filesystem::path(imagename).filename().string());
+    logger.log(Logger::LogLevel::INFO, "Recon", "Process", "Reconstructing");
     int num_threads = omp_get_num_procs()*0.8; // Get the number of CPU cores
     omp_set_num_threads(num_threads);      // Set to the number of cores
     try
     {
-        for (int k = 0; k < m_data_bin->n_slices; k++)
+        for (int k = 0; k < m_data_bin.n_slices; k++)
         {
 #pragma omp parallel for
-            for (int j = 0; j < m_data_bin->n_cols; j++)
+            for (int j = 0; j < m_data_bin.n_cols; j++)
             {
                 // Extract A-Scan data and remove the first 8 bits of identifier
-                arma::vec ascan = arma::conv_to<arma::vec>::from(m_data_bin->slice(k).col(j));
+                arma::vec ascan = arma::conv_to<arma::vec>::from(m_data_bin.slice(k).col(j));
                 ascan.shed_rows(0, 7);
                 // Add window to reduce spectrum leakage
                 ascan %= m_window;
@@ -199,23 +185,22 @@ bool Recon::reconstruction()
                 ascan_abs = 70.0 * arma::log10(ascan_abs + 1);
                 ascan_abs = arma::pow(ascan_abs, 3);
                 // Save
-                m_data_amplitude->slice(k).col(j) = ascan_abs;
-                m_data_phase->slice(k).col(j) = ascan_arg;
+                m_data_amplitude.slice(k).col(j) = ascan_abs;
+                m_data_phase.slice(k).col(j) = ascan_arg;
             }
-            arma::mat matrix = m_data_amplitude->slice(k);
+            arma::mat matrix = m_data_amplitude.slice(k);
             imagesc(matrix, "magnitude", 1);
-            matrix = m_data_phase->slice(k);
+            matrix = m_data_phase.slice(k);
             imagesc(matrix, "phase", 1);
         }
-        logger.log(Logger::LogLevel::INFO, "Recon", "Process", "Successfully Reconstruct");
-        logger.log(Logger::LogLevel::INFO, "Recon", "Process", "Writing to Tiff File");
-        saveArmaCubeToMultipageTIFF(*m_data_amplitude, outputname_amplitude);
-        saveArmaCubeToMultipageTIFF(*m_data_phase, outputname_phase);
-        logger.log(Logger::LogLevel::INFO, "Recon", "Process", "Successfully write");
+        logger.log(Logger::LogLevel::INFO, "Recon", "Writing", "Writing to Tiff File");
+        saveArmaCubeToMultipageTIFF(m_data_amplitude, outputname_amplitude);
+        saveArmaCubeToMultipageTIFF(m_data_phase, outputname_phase);
+        logger.log(Logger::LogLevel::TRACE, "Recon", "Success", "Successfully");
     }
     catch (const std::exception& e)
     {
-        logger.log(Logger::LogLevel::ERROR, "Reconstruction", "Process", "Reconstruction failed for: " + std::filesystem::path(imagename).filename().string());
+        logger.log(Logger::LogLevel::ERROR, "Recon", "Process", "Failed for: " + std::filesystem::path(imagename).filename().string());
         return false;
     }
     return true;
@@ -233,9 +218,6 @@ int main()
     auto config = toml::parse_file(filename);
     std::string path = *config["path"].value<std::string>();
     std::string extension = *config["extension"].value<std::string>();
-    int size_x = *config["size_x"].value<int>();
-    int size_y = *config["size_y"].value<int>();
-    int size_z = *config["size_z"].value<int>();
     int maxIteration = *config["maxIteration"].value<bool>();
     float rho = *config["rho"].value<float>();
     float lambda = *config["lambda"].value<float>();
@@ -247,25 +229,15 @@ int main()
     logger.log(Logger::LogLevel::INFO, "Data", "Load", "Directory scan complete");
 
     // Perform image reconstruction
-    Recon recon(size_x, size_y, size_z, DataType::INT16, maxIteration, rho, lambda);
+    Recon recon(maxIteration, rho, lambda);
 
     for (int i = 0; i < ds.length; i++)
     {
         std::string filepath = ds.readname(i);
         std::string filename = std::filesystem::path(filepath).filename().string();
         
-
-        if (!recon.readData(filepath))
-        {
-            continue;
-        }
-
-        if (!recon.reconstruction())
-        {
-            continue;
-        }
-
-        logger.log(Logger::LogLevel::INFO, "Reconstruction", "Success", "Successfully reconstructed: " + filename);
+        bool isSuccess = recon.readData(filepath) && recon.reconstruction();
+        if (!(isSuccess)) continue;
     }
 
     logger.log(Logger::LogLevel::INFO, "System", "Shutdown", "Program completed successfully");

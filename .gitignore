@@ -1,3 +1,5 @@
 .vscode
 build
 test_data
+.vs
+out
