@@ -28,6 +28,7 @@ private:
     float m_lambda;
     FFT m_fft;
     arma::vec m_window;
+    bool m_visualize_frames = false;
 
     void saveArmaCubeToMultipageTIFF(const arma::cube &cube, const std::string &filename);
     void imshow(const arma::mat &matrix, const std::string &winname = "Image", int waittime = 0);
@@ -35,7 +36,7 @@ private:
 
 public:
     Logger logger;
-    Recon(int maxIteration = 0, float rho = 0.01, float lambda = 100);
+    Recon(int maxIteration = 0, float rho = 0.01, float lambda = 100, bool visualize_frames = false);
     bool readData(std::string filename);
     bool reconstruction();
 };

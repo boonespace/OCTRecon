@@ -63,8 +63,8 @@ void Recon::saveArmaCubeToMultipageTIFF(const arma::cube &cube, const std::strin
     cv::imwrite(name, images_cv);
 }
 
-Recon::Recon(int maxIteration, float rho, float lambda)
-    : m_rho(rho), m_lambda(lambda), m_maxIteration(maxIteration)
+Recon::Recon(int maxIteration, float rho, float lambda, bool visualize_frames)
+    : m_rho(rho), m_lambda(lambda), m_maxIteration(maxIteration), m_visualize_frames(visualize_frames)
 {
 }
 
@@ -189,10 +189,12 @@ bool Recon::reconstruction()
                 m_data_amplitude.slice(k).col(j) = ascan_abs;
                 m_data_phase.slice(k).col(j) = ascan_arg;
             }
-            arma::mat matrix = m_data_amplitude.slice(k);
-            imagesc(matrix, "magnitude", 1);
-            matrix = m_data_phase.slice(k);
-            imagesc(matrix, "phase", 1);
+            if (m_visualize_frames) {
+                arma::mat matrix = m_data_amplitude.slice(k);
+                imagesc(matrix, "magnitude", 1);
+                matrix = m_data_phase.slice(k);
+                imagesc(matrix, "phase", 1);
+            }
             logger.log(Logger::LogLevel::INFO, "Recon", "Process", std::format("Reconstructing {:.2f}%\r", 100.f*k/m_data_bin.n_slices));
         }
         logger.log(Logger::LogLevel::INFO, "Recon", "Process", std::format("Reconstructing {:.2f}%", 100.f));
@@ -224,6 +226,7 @@ int main()
     int maxIteration = *config["maxIteration"].value<bool>();
     float rho = *config["rho"].value<float>();
     float lambda = *config["lambda"].value<float>();
+    bool visualize_frames = *config["visualize_frames"].value<bool>();
 
     // Adjust according to the actual project directory structure
     logger.log(Logger::LogLevel::INFO, "Data", "Init", "Directory scan started: " + path);
@@ -232,7 +235,7 @@ int main()
     logger.log(Logger::LogLevel::INFO, "Data", "Load", "Directory scan complete");
 
     // Perform image reconstruction
-    Recon recon(maxIteration, rho, lambda);
+    Recon recon(maxIteration, rho, lambda, visualize_frames);
 
     for (int i = 0; i < ds.length; i++)
     {
