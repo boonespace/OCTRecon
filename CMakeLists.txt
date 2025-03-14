@@ -29,6 +29,7 @@ if(OpenMP_CXX_FOUND)
 endif()
 
 set(SOURCES
+    include/OCTRecon.cpp 
     include/DataStorage.cpp
     include/FFT.cpp
     include/Encoding.cpp
@@ -40,7 +41,7 @@ else()
     set(LIBRARIES ${OpenCV_LIBS} armadillo fftw3)
 endif()
 
-add_executable(octrecon OCTRecon.cpp ${SOURCES})
+add_executable(octrecon main.cpp ${SOURCES})
 
 target_link_libraries(octrecon ${LIBRARIES})
 
@@ -51,16 +52,17 @@ elseif(CMAKE_BUILD_TYPE STREQUAL "Release")
 endif()
 
 if(WIN32)
-    set(DLL_FILES
+    set(Dependency_Files
         ${CMAKE_SOURCE_DIR}/third_party/fftw3/dll/libfftw3-3.dll
         ${OpenCV_RUNTIME_DLL}
         C:/Develop/armadillo/armadillo/examples/lib_win64/libopenblas.dll
+        ${CMAKE_SOURCE_DIR}/config.toml
     )
-    foreach(DLL ${DLL_FILES})
+    foreach(Dependency_File ${Dependency_Files})
         add_custom_command(
             TARGET octrecon POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            ${DLL} $<TARGET_FILE_DIR:octrecon>
+            ${Dependency_File} $<TARGET_FILE_DIR:octrecon>
         )
     endforeach()
 endif()

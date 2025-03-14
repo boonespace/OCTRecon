@@ -9,6 +9,7 @@ DataStorage::DataStorage(std::string folderPath, std::string extension)
 // Method to retrieve all files with given extension from specified folder.
 void DataStorage::getFromFolder(std::string folderPath, std::string extension)
 {
+    logger.log(Logger::LogLevel::INFO, "Files", "Loading", "Directory scan started: " + folderPath);
 
     // Check if folder exists. Throw exception if not.
     bool isexist = std::filesystem::exists(folderPath);

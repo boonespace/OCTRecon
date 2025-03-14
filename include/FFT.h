@@ -12,7 +12,7 @@ private:
     fftw_plan m_plan_backward;
 
 public:
-    explicit FFT() = default;
+    explicit FFT() : m_size_x(0), m_plan_forward(nullptr), m_plan_backward(nullptr) {};
     ~FFT();
 
     void set(int size_x);

@@ -4,6 +4,7 @@
 #include <vector>
 #include <string>
 #include <filesystem>
+#include "Logger.h"
 
 // DataStorage class to store and retrieve data from a folder.
 class DataStorage {
@@ -12,6 +13,8 @@ public:
     
     std::vector<std::string> files; // Vector of file names in the folder.    
     size_t length; // Number of files in the folder.
+
+    Logger logger;
 
     DataStorage() = default;
 

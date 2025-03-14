@@ -1,0 +1,24 @@
+﻿# file path and extension
+path = "../../../test_data/"
+extension = ".bin"
+
+# regularization term
+# if maxIteration<=0, regularization is invalid.
+maxIteration = 10
+rho = 0.01
+lambda = 100
+
+# visualizion
+# true/false
+visualize_frames = false
+
+# output format
+# recon_binary - binary data
+# recon_tiff16 - 16-bit tif image (multipage)
+# recon_tiff08 -  8-bit tif image (multipage) (TODO)
+# NOTE: only recon_binary support for fft data
+output_mode = "recon_binary" 
+
+# output data
+# amplitude / phase / fft
+output_data = ["fft",]

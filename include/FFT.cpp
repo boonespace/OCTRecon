@@ -6,14 +6,24 @@ void FFT::set(int size_x)
     // Create an independent FFT plan for this instance
     // armadillo is column-first, fftw is row-first, so the x and y dimensions need to be swapped
     // in and out are both nullptr, support dft method
+    if (m_plan_forward) {
+        fftw_destroy_plan(m_plan_forward);
+    }
+    if (m_plan_backward) {
+        fftw_destroy_plan(m_plan_backward);
+    }
     m_plan_forward = fftw_plan_dft_1d(size_x, nullptr, nullptr, FFTW_FORWARD, FFTW_ESTIMATE);
     m_plan_backward = fftw_plan_dft_1d(size_x, nullptr, nullptr, FFTW_BACKWARD, FFTW_ESTIMATE);
 }
 
 FFT::~FFT()
 {
-    fftw_destroy_plan(m_plan_forward);
-    fftw_destroy_plan(m_plan_backward);
+    if (m_plan_forward) {
+        fftw_destroy_plan(m_plan_forward);
+    }
+    if (m_plan_backward) {
+        fftw_destroy_plan(m_plan_backward);
+    }
 }
 
 void FFT::arma2fftw(const arma::vec &input, fftw_complex *in)

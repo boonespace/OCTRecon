@@ -1,7 +1,34 @@
 #include "OCTRecon.h"
 #include "Encoding.h"
-#include "toml++/toml.hpp"
 #include <omp.h>
+
+static OutputMode string_to_output_mode(const std::string& str) {
+    if (str == "recon_binary") {
+        return OutputMode::recon_binary;
+    }
+    else if (str == "recon_tiff16") {
+        return OutputMode::recon_tiff16;
+    }
+    else if (str == "recon_tiff08") {
+        return OutputMode::recon_tiff08;
+    }
+    else {
+        throw std::invalid_argument("Invalid OutputMode string: " + str);
+    }
+}
+
+static std::string output_mode_to_string(OutputMode mode) {
+    switch (mode) {
+    case OutputMode::recon_binary:
+        return "recon_binary";
+    case OutputMode::recon_tiff16:
+        return "recon_tiff16";
+    case OutputMode::recon_tiff08:
+        return "recon_tiff08";
+    default:
+        return "Unknown";
+    }
+}
 
 void Recon::imshow(const arma::mat &matrix, const std::string &winname, int waittime)
 {
@@ -38,14 +65,21 @@ void Recon::imagesc(const arma::mat &matrix, const std::string &winname, int wai
     cv::waitKey(waittime);
 }
 
-void Recon::saveArmaCubeToMultipageTIFF(const arma::cube &cube, const std::string &filename)
+void Recon::saveArmaCubeToMultipageTIFF(const arma::cube &cube, const std::string &filename, int bit_num)
 {
     std::vector<cv::Mat> images_cv;
+
+    int type_cv = CV_8U; // default CV_8U
+    float type_max = 255.0f;
+    if (bit_num == 16) {
+        type_cv = CV_16U;
+        type_max = 65535.0f;
+    }
 
     // Overall normalization
     float min_value = cube.min();
     float max_value = cube.max();
-    arma::cube normalized_cube = (cube - min_value) / (max_value - min_value) * 65535.0;
+    arma::cube normalized_cube = (cube - min_value) / (max_value - min_value) * type_max;
 
     // Convert arma::cube to std::vector<cv::Mat>
     for (int k = 0; k < cube.n_slices; k++)
@@ -54,7 +88,7 @@ void Recon::saveArmaCubeToMultipageTIFF(const arma::cube &cube, const std::strin
         cv::Mat matrix_cv(cube.n_rows, cube.n_cols, CV_64F);
         arma::mat matrix_t = matrix_arma.t();
         std::memcpy(matrix_cv.data, matrix_t.memptr(), matrix_t.n_elem * sizeof(double));
-        matrix_cv.convertTo(matrix_cv, CV_16U);
+        matrix_cv.convertTo(matrix_cv, type_cv);
         images_cv.push_back(matrix_cv);
     }
 
@@ -63,9 +97,14 @@ void Recon::saveArmaCubeToMultipageTIFF(const arma::cube &cube, const std::strin
     cv::imwrite(name, images_cv);
 }
 
-Recon::Recon(int maxIteration, float rho, float lambda, bool visualize_frames)
-    : m_rho(rho), m_lambda(lambda), m_maxIteration(maxIteration), m_visualize_frames(visualize_frames)
+Recon::Recon(Config config)
 {
+    m_maxIteration = config.maxIteration;
+    m_rho = config.rho;
+    m_lambda = config.lambda;
+    m_visualize_frames = config.visualize_frames;
+    m_output_data = config.output_data;
+    m_output_mode = string_to_output_mode(config.output_mode);
 }
 
 bool Recon::readData(std::string filename)
@@ -75,8 +114,22 @@ bool Recon::readData(std::string filename)
 
     std::filesystem::path image_path(imagename);
     std::string image_path_noext = image_path.replace_filename(image_path.stem().string()).string();
-    outputname_amplitude = image_path_noext + "_amplitude.tif";
-    outputname_phase = image_path_noext + "_phase.tif";
+
+    outputname_fft = "";
+    outputname_amplitude = "";
+    outputname_phase = "";
+
+    for (const auto& item : m_output_data) {
+        if (item == "fft") {
+            outputname_fft = image_path_noext + "_fft";
+        }
+        else if (item == "amplitude") {
+            outputname_amplitude = image_path_noext + "_amplitude";
+        }
+        else if (item == "phase") {
+            outputname_phase = image_path_noext + "_phase";
+        }
+    }
 
     // read bin file
     FILE* file = fopen(filename.c_str(), "rb"); // Open the file in binary mode
@@ -123,6 +176,7 @@ bool Recon::readData(std::string filename)
 
     // Allocate size
     size_t m_num_half_ascan = m_num_ascan / 2;
+    m_data_fft.resize(m_num_half_ascan, m_num_bscan, m_num_cscan);
     m_data_amplitude.resize(m_num_half_ascan, m_num_bscan, m_num_cscan);
     m_data_phase.resize(m_num_half_ascan, m_num_bscan, m_num_cscan);
     m_fft.set(m_num_ascan);
@@ -180,27 +234,35 @@ bool Recon::reconstruction()
                     ascan_abs = arma::abs(r);
                 }
                 // Retain half and remove the inverted image
+                ascan_fft.shed_rows(ascan_fft.n_rows - 1024, ascan_fft.n_rows - 1);
                 ascan_abs.shed_rows(ascan_abs.n_rows - 1024, ascan_abs.n_rows - 1);
                 ascan_arg.shed_rows(ascan_arg.n_rows - 1024, ascan_arg.n_rows - 1);
                 // Signal Enhancement
                 ascan_abs = 70.0 * arma::log10(ascan_abs + 1);
                 ascan_abs = arma::pow(ascan_abs, 3);
                 // Save
-                m_data_amplitude.slice(k).col(j) = ascan_abs;
-                m_data_phase.slice(k).col(j) = ascan_arg;
+                // std::cout << m_data_fft.slice(k).col(j).n_rows << " " <<ascan_fft.n_rows << std::endl;
+                if (!outputname_fft.empty()) m_data_fft.slice(k).col(j) = ascan_fft;
+                if (!outputname_amplitude.empty()) m_data_amplitude.slice(k).col(j) = ascan_abs;
+                if (!outputname_phase.empty()) m_data_phase.slice(k).col(j) = ascan_arg;
             }
             if (m_visualize_frames) {
-                arma::mat matrix = m_data_amplitude.slice(k);
-                imagesc(matrix, "magnitude", 1);
-                matrix = m_data_phase.slice(k);
-                imagesc(matrix, "phase", 1);
+                if (!outputname_amplitude.empty()) {
+                    arma::mat matrix = m_data_amplitude.slice(k);
+                    imagesc(matrix, "magnitude", 1);
+                }
+                if (!outputname_phase.empty()){
+                    arma::mat matrix = m_data_phase.slice(k);
+                    imagesc(matrix, "phase", 1);
+                }
             }
             logger.log(Logger::LogLevel::INFO, "Recon", "Process", std::format("Reconstructing {:.2f}%\r", 100.f*k/m_data_bin.n_slices));
         }
         logger.log(Logger::LogLevel::INFO, "Recon", "Process", std::format("Reconstructing {:.2f}%", 100.f));
-        logger.log(Logger::LogLevel::INFO, "Recon", "Writing", "Writing to Tiff File");
-        saveArmaCubeToMultipageTIFF(m_data_amplitude, outputname_amplitude);
-        saveArmaCubeToMultipageTIFF(m_data_phase, outputname_phase);
+        logger.log(Logger::LogLevel::INFO, "Recon", "Writing", "Writing to file");
+        if (!outputname_fft.empty()) save(m_data_fft, outputname_fft);
+        if (!outputname_amplitude.empty()) save(m_data_amplitude, outputname_amplitude);
+        if (!outputname_phase.empty()) save(m_data_phase, outputname_phase);
         logger.log(Logger::LogLevel::TRACE, "Recon", "Success", "Successfully");
     }
     catch (const std::exception& e)
@@ -211,41 +273,33 @@ bool Recon::reconstruction()
     return true;
 }
 
-int main()
-{
-    std::setlocale(LC_ALL, ".UTF-8");
-
-    // Logger
-    Logger logger;
-
-    // Configure
-    std::string filename = "config.toml";
-    auto config = toml::parse_file(filename);
-    std::string path = *config["path"].value<std::string>();
-    std::string extension = *config["extension"].value<std::string>();
-    int maxIteration = *config["maxIteration"].value<bool>();
-    float rho = *config["rho"].value<float>();
-    float lambda = *config["lambda"].value<float>();
-    bool visualize_frames = *config["visualize_frames"].value<bool>();
-
-    // Adjust according to the actual project directory structure
-    logger.log(Logger::LogLevel::INFO, "Data", "Init", "Directory scan started: " + path);
-    DataStorage ds;
-    ds.getFromFolder(path, extension);
-    logger.log(Logger::LogLevel::INFO, "Data", "Load", "Directory scan complete");
-
-    // Perform image reconstruction
-    Recon recon(maxIteration, rho, lambda, visualize_frames);
-
-    for (int i = 0; i < ds.length; i++)
+void Recon::save(const arma::cx_cube& cube, const std::string& filename) {
+    switch (m_output_mode)
     {
-        std::string filepath = ds.readname(i);
-        std::string filename = std::filesystem::path(filepath).filename().string();
-        
-        bool isSuccess = recon.readData(filepath) && recon.reconstruction();
-        if (!(isSuccess)) continue;
+    case OutputMode::recon_tiff08:
+    case OutputMode::recon_tiff16:
+    case OutputMode::recon_binary:
+        cube.save(filename, arma::arma_binary);
+        break;
+    default:
+        break;
     }
+}
 
-    logger.log(Logger::LogLevel::INFO, "System", "Shutdown", "Program completed successfully");
-    return 0;
+void Recon::save(const arma::cube& cube, const std::string& filename) {
+    switch (m_output_mode)
+    {
+    case OutputMode::recon_binary:
+        cube.save(filename, arma::arma_binary);
+        break;
+    case OutputMode::recon_tiff16:
+        saveArmaCubeToMultipageTIFF(cube, filename+".tif", 16);
+        break;
+    case OutputMode::recon_tiff08:
+        saveArmaCubeToMultipageTIFF(cube, filename+".tif", 8);
+        break;
+    default:
+        std::cerr << "not support this output mode: " << output_mode_to_string(m_output_mode) << std::endl;
+        exit(1);
+    }
 }
