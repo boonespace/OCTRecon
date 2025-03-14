@@ -140,7 +140,8 @@ bool Recon::readData(std::string filename)
 
 bool Recon::reconstruction()
 {
-    logger.log(Logger::LogLevel::INFO, "Recon", "Process", "Reconstructing");
+    logger.log(Logger::LogLevel::INFO, "Recon", "Process", "Reconstructing\r");
+    float next_progress = 0.0f;
     int num_threads = omp_get_num_procs()*0.8; // Get the number of CPU cores
     omp_set_num_threads(num_threads);      // Set to the number of cores
     try
@@ -192,7 +193,9 @@ bool Recon::reconstruction()
             imagesc(matrix, "magnitude", 1);
             matrix = m_data_phase.slice(k);
             imagesc(matrix, "phase", 1);
+            logger.log(Logger::LogLevel::INFO, "Recon", "Process", std::format("Reconstructing {:.2f}%\r", 100.f*k/m_data_bin.n_slices));
         }
+        logger.log(Logger::LogLevel::INFO, "Recon", "Process", std::format("Reconstructing {:.2f}%", 100.f));
         logger.log(Logger::LogLevel::INFO, "Recon", "Writing", "Writing to Tiff File");
         saveArmaCubeToMultipageTIFF(m_data_amplitude, outputname_amplitude);
         saveArmaCubeToMultipageTIFF(m_data_phase, outputname_phase);
